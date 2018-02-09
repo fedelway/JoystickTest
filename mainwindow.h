@@ -16,6 +16,9 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event);
+
 private slots:
     void on_btnStart_clicked();
 

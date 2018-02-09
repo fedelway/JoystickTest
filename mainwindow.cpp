@@ -1,15 +1,18 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-#include <../Server/joystickbuttons.h>
-#include <../Server/programprotocol.h>
+#include <../JoystickServer/joystickbuttons.h>
+#include <../JoystickServer/programprotocol.h>
 #include <QTcpSocket>
+#include <QDebug>
+#include <QKeyEvent>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    this->installEventFilter(this);
 }
 
 MainWindow::~MainWindow()
@@ -19,32 +22,52 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_btnStart_clicked()
 {
-    const QString address = "127.0.0.1";
-    quint16 port = 1060;
+    if(socket.state() == QAbstractSocket::ConnectedState)
+    {
+        socket.close();
+        ui->btnStart->setText("Start");
+    }else{
+        const QString address = "127.0.0.1";
+        const quint16 port = 1060;
 
-    socket.setSocketOption(QAbstractSocket::LowDelayOption,1);
-    socket.connectToHost(address,port);
+        socket.setSocketOption(QAbstractSocket::LowDelayOption,1);
+        socket.connectToHost(address,port);
+
+        ui->btnStart->setText("Stop");
+    }
 }
 
 void MainWindow::sendData(int button, bool press)
 {
-    const int packetSize = Protocol::headerSize() + Protocol::dataSize();
+    const bool newProtocol = true;
 
-    //Armo el packete
-    Protocol::header_t header;
-    Protocol::data_t data;
+    if(newProtocol){
+        char data[9];
 
-    header.size = Protocol::dataSize();
-    strcpy((char*)&header.validationString,(char*)Protocol::ValidationString);
-    data.btn = button;
-    data.press = press ? 1 : 0;
+        sprintf(data,"MSG004%02d%s",button,press?"S":"N");
 
-    char* buffer = (char*)malloc(packetSize);
+        socket.write(data,9);
+    }else{
+        const int packetSize = Protocol::headerSize() + Protocol::dataSize();
 
-    memcpy(buffer,&header,Protocol::headerSize());
-    memcpy(buffer+Protocol::headerSize(),&data,Protocol::dataSize());
+        //Armo el packete
+        Protocol::header_t header;
+        Protocol::data_t data;
 
-    socket.write(buffer,packetSize);
+        header.size = Protocol::dataSize();
+        strcpy((char*)&header.validationString,(char*)Protocol::ValidationString);
+        data.btn = button;
+        data.press = press ? 1 : 0;
+
+        char* buffer = (char*)malloc(packetSize);
+
+        memcpy(buffer,&header,Protocol::headerSize());
+        memcpy(buffer+Protocol::headerSize(),&data,Protocol::dataSize());
+
+        socket.write(buffer,packetSize);
+
+        free(buffer);
+    }
 }
 
 void MainWindow::on_btnUp_pressed()
@@ -93,4 +116,17 @@ void MainWindow::on_btnRight_released()
 {
     const int btn = Joystick::BTN_RIGHT;
     sendData(btn,false);
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if(event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease)
+    {
+        QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
+        qDebug() << QKeySequence(keyEvent->key()).toString()
+                 << ((event->type() == QEvent::KeyPress) ? "PRESS" : "RELEASE");
+        ui->lineEdit->setText(ui->lineEdit->text().append(QKeySequence(keyEvent->key()).toString()));
+    }
+
+    return QMainWindow::eventFilter(watched,event);
 }
